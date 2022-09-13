@@ -24,7 +24,11 @@ import {
 import {isErrorLike} from '../util/ErrorLike.js';
 import {Accessibility} from './Accessibility.js';
 import {Browser, BrowserContext} from './Browser.js';
-import {CDPSession, CDPSessionEmittedEvents} from './Connection.js';
+import {
+  CDPSession,
+  CDPSessionEmittedEvents,
+  isTargetClosedError,
+} from './Connection.js';
 import {ConsoleMessage, ConsoleMessageType} from './ConsoleMessage.js';
 import {Coverage} from './Coverage.js';
 import {Dialog} from './Dialog.js';
@@ -403,6 +407,20 @@ export interface PageEventObject {
 }
 
 /**
+ * Supresses the error if it's caused by the target being closed. It usually happens
+ * if there are concurrent Puppeteer connections to the target and the target is closed by
+ * the concurrent connection.
+ * @internal
+ */
+function debugErrorIfTargetClosed(err: Error): void {
+  if (isTargetClosedError(err)) {
+    debugError(err);
+    return;
+  }
+  throw err;
+}
+
+/**
  * Page provides methods to interact with a single tab or
  * {@link https://developer.chrome.com/extensions/background_pages | extension background page}
  * in Chromium.
@@ -470,7 +488,7 @@ export class Page extends EventEmitter {
     );
     await page.#initialize();
     if (defaultViewport) {
-      await page.setViewport(defaultViewport);
+      await page.setViewport(defaultViewport).catch(debugErrorIfTargetClosed);
     }
     return page;
   }
@@ -649,7 +667,7 @@ export class Page extends EventEmitter {
       this.#frameManager.initialize(this.#target._targetId),
       this.#client.send('Performance.enable'),
       this.#client.send('Log.enable'),
-    ]);
+    ]).catch(debugErrorIfTargetClosed);
   }
 
   async #onFileChooser(
